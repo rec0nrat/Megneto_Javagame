@@ -1,0 +1,419 @@
+<!doctype html >
+	
+<html>
+	
+<head>
+	<title>Magneto's Got A Problem</title>
+</head>
+
+<body>
+
+	<canvas id="can" width="600" height="480" style="border: 1px solid black" />
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	
+	<script>
+			//Define canvas and context
+			var can = document.getElementById("can");
+			var ctx = can.getContext("2d");
+			
+				//can.width = window.innerWidth;
+				//can.height = window.innerHeight;
+			
+			//Define array to hold hazards
+			var hazards = [];
+			var metals = [];
+			var scores = [];
+			
+			//******************************************************************************
+			//CONTROL PANEL || 
+			//******************************************************************************
+			var godmode = false; 		//invincible
+			var cx = can.width/2; 		 		//centre of canvas x/y
+			var cy = can.height/2;		 
+			var currentA = 0;	 		//current angle from centre
+			var a = 0;			 		//target angle for shield
+			var hp = 100;		 		//hit points, range[0,100]
+			var frameCounter = 0;		//tracks game frames
+			var spriteIndex = 0; 		//index for animations
+			var time = 0;		 		//seconds game's been running
+			var spawnBasePeriod = .01;	//frequency that hazards spawn 
+			var hazardBaseVel = 2;		//starting velocity of hazards
+			var shieldVel = .3;			//shield velocity
+			var damage = 10;			//amount of damage hazards inflict
+			var scaleRateSpawn = 30;	//period at which spawn frequency increases
+			var scaleRateVel = 30;		//period at which hazard velocity increases
+			var scaleDelay = 15;		//offset between spawn and velocity periods
+			var velocityInc = .2;		//amount velocity increases at each period
+			var spawnInc = .005;		//amount spawn rate increases at each period
+			var held = false;			//Stores whether mouse is being held down or not
+			var gameloop = 0;			//Starting position of game loop
+			//******************************************************************************
+			
+			//Create state machine for game start
+			var gameState = new StateMachine("start",spawnBasePeriod,hazardBaseVel);
+			
+			//persistent images 
+			var shield = new Image();	
+			shield.src = "Shield.png";
+			var clouds = new Image();
+			clouds.src = "Clouds.png";
+			var capeFlap = new Image();
+			capeFlap.src = "cape.png";
+			
+			//Sound FX
+			var sndDeflect = new Audio();
+			sndDeflect.src = "Laser_Shoot6.mp3";
+			var sndBackground = new Audio();
+			sndBackground.src = "Audiobeast.mp3";
+			sndBackground.loop = true;
+			sndBackground.play();
+			
+			//Images stored in hazard array
+			var metal = new Image();
+			metal.src = "Metal.png";
+			metals.push(metal);
+			var car1 = new Image();
+			car1.src = "car1.png";
+			metals.push(car1);
+			var car2 = new Image();
+			car2.src = "car2.png";
+			metals.push(car2);
+			var tank1 = new Image();
+			tank1.src = "tank1.png";
+			metals.push(tank1);
+			var r2d2 = new Image();
+			r2d2.src = "r2d2.png";
+			metals.push(r2d2);
+			var plane = new Image();
+			plane.src = "plane.png";
+			metals.push(plane);
+			var axe = new Image();
+			axe.src = "axe.png";
+			metals.push(axe);
+			var helicopter = new Image();
+			helicopter.src = "helicopter.png";
+			metals.push(helicopter);
+			var metalhead1 = new Image();
+			metalhead1.src = "metalhead1.png";
+			metals.push(metalhead1);
+			var metalhead2 = new Image();
+			metalhead2.src = "metalhead2.png";
+			metals.push(metalhead2);
+			var motorcycle = new Image();
+			motorcycle.src = "motorcycle.png";
+			metals.push(motorcycle);
+			var pipe1 = new Image();
+			pipe1.src = "pipe1.png";
+			metals.push(pipe1);
+			var pipe2 = new Image();
+			pipe2.src = "pipe2.png";
+			metals.push(pipe2);
+			var skyscraper1 = new Image();
+			skyscraper1.src = "skyscraper1.png";
+			metals.push(skyscraper1);
+			var skyscraper2 = new Image();
+			skyscraper2.src = "skyscraper2.png";
+			metals.push(skyscraper2);
+			var sword = new Image();
+			sword.src = "sword.png";
+			metals.push(sword);
+			var spear = new Image();
+			spear.src = "spear.png";
+			metals.push(spear);
+			var transformer = new Image();
+			transformer.src = "transformer.png";
+			metals.push(transformer);
+			var robot = new Image();
+			robot.src = "robot.png";
+			metals.push(robot);
+			var heman = new Image();
+			heman.src = "heman.png";
+			metals.push(heman);
+			var minigun = new Image();
+			minigun.src = "minigun.png";
+			metals.push(minigun);
+			var wolverine = new Image();
+			wolverine.src = "wolverine.png";
+			metals.push(wolverine);
+			var terminator = new Image();
+			terminator.src = "terminator.png";
+			metals.push(terminator);
+			
+			//Define mouse listeners
+			/*document.addEventListener("touchmove",spin); //touchmove? mousemove
+			document.addEventListener("touchstart",click);//touchstart mousedown
+			document.addEventListener("touchin",unclick);//touchin mouseup
+			*/
+			document.addEventListener("mousemove",spin); //touchmove? mousemove
+			document.addEventListener("mousedown",click);//touchstart mousedown
+			document.addEventListener("mouseup",unclick);//touchin mouseup
+			//change e to e.touches[0].pageX or Y
+			//Check to see if mouse has been clicked
+			function click(e){
+				held = true;
+				currentA = a;	//Save current angle of shield
+				a = Math.atan2((e.offsetY-cy),(e.offsetX-cx)) + Math.PI/2;	//calculate target angle for shield
+				if(gameState.state == "ready") gameState = init(gameState,spawnBasePeriod,hazardBaseVel);
+				if(gameState.state == "gameover") gameState = init(gameState,spawnBasePeriod,hazardBaseVel);
+			}
+			
+			//Check to see if mouse is unclicked
+			function unclick(e){
+				held = false;
+			}
+			
+			//Calculates angle of hazard to target
+			function getAngleHazard(hazard){
+				return Math.atan2((hazard.xpos-cy),(hazard.ypos-cx)) + Math.PI/2;
+			}
+			
+			//Checks to see if mouse is being moved while left mouse button is depressed
+			function spin(e){ 
+				if(held){
+					//currentA = a;
+					//a = Math.atan2((e.offsetY-cy),(e.offsetX-cx)) + Math.PI/2;
+				}
+			}
+			
+			//Defines the hazards flying at magneto
+			function Hazard(xpos, ypos, speed, image){
+				this.speed = speed;
+				this.xpos = xpos;
+				this.ypos = ypos;
+				this.image = image;
+				this.angle = 0;
+				this.xvel = 1;
+				this.yvel = 1;
+			}
+			
+			//Stores the game state and variables that control AI
+			function StateMachine(state, vel, spawn){
+				this.state = state;
+				this.vel = vel;
+				this.spawn = spawn;
+			}
+			
+			//Stores high scores 
+			function Score(name,time){
+				this.name = name;
+				this.time = time;
+			}
+			
+			//Initializes variables for start/restart
+			function init(gameState,spawnBasePeriod,hazardBaseVel){
+				if(gameState.state == "gameover") gameState.state = "start";
+				if(gameState.state == "ready") gameState.state = "play";
+				hazards = []; 
+				a = 0;	
+				hp = 100;
+				frameCounter = 0;
+				time = 0;
+				spriteIndex = 0;
+				currentA = 0;
+				gameState.vel = hazardBaseVel;
+				gameState.spawn = spawnBasePeriod;
+				
+				if(gameloop != 0){ //clear game loop
+					clearInterval(gameloop);
+					gameloop = 0;
+				}
+				gameloop = setInterval(game,1000/30); //set fps to 30
+				return gameState;
+			}
+			
+			//Selects a random image from array of hazard images
+			function randomImage(metals){
+				return metals[Math.floor(Math.random()*(metals.length))];
+			}
+			
+			//Gravity function
+			function calcGrav(cur){
+				//calculate component speeds by angle
+				var dx = cx - (cur.xpos+cur.image.width/2);
+				var dy = cy - (cur.ypos+cur.image.height/2);
+				var d = Math.sqrt(dx*dx+dy*dy);
+				cur.xvel = cur.speed*dx/d;
+				cur.yvel = cur.speed*dy/d;
+			}
+			
+			//Check to see if hazard is within range of the shield
+			function inRange(c,range){
+				var b = Math.PI*3/2-c;
+				var da = Math.atan2(Math.sin(currentA-b),Math.cos(currentA-b));
+				return (Math.abs(da) <= range);
+			}
+			
+			//Adds a new hazard to hazard array
+			function spawnHazard(x,y){
+				var cur = new Hazard(x,y,gameState.vel,randomImage(metals));
+				cur.angle = getAngleHazard(cur);
+				calcGrav(cur);
+				hazards.push(cur);
+			}
+			
+			//Game Loop
+			function game(){
+				//start screen
+				if(gameState.state == "start"){
+					gameState.state = "ready";
+					console.log(gameState.state);
+					console.log("vel: "+gameState.vel);
+					console.log("spawn: "+gameState.spawn);
+					setTimeout(function(){
+					ctx.clearRect(0,0,can.width,can.height);
+					ctx.drawImage(clouds,0,0,600,480);
+					ctx.globalAlpha = 0.5;
+					ctx.fillStyle = "black";
+					ctx.fillRect(0,0,can.width,can.height);
+					ctx.globalAlpha = 1;
+					ctx.textAlign = "center";
+					ctx.font = "30pt calibri";
+					ctx.fillStyle = "red";
+					ctx.fillText("Magneto's Got A Problem!", can.width/2, can.height/2);
+					ctx.textAlign = "left";
+					},100);
+				}
+				
+				//Game play Logic 
+				if(gameState.state == "play"){
+					//AI for spawning hazards randomly
+					if(Math.random() <= gameState.spawn){
+						var rand = Math.floor(Math.random()*4);
+						switch(rand){
+							case 0:
+								spawnHazard(0,Math.random()*can.height);
+								break;
+							case 1:
+								spawnHazard(Math.random()*can.width,0);
+								break;
+							case 2:
+								spawnHazard(can.width,Math.random()*can.height);
+								break;
+							case 3:
+								spawnHazard(Math.random()*can.width,can.height);
+								break;
+							default:
+								console.log("you screwed up");
+						}	
+					}
+					//update movement
+					for(var i = 0; i < hazards.length; i++){
+						hazards[i].xpos += hazards[i].xvel;
+						hazards[i].ypos += hazards[i].yvel;
+						
+						//check collisions
+						var curx = hazards[i].xpos + hazards[i].image.width/2;
+						var cury = hazards[i].ypos + hazards[i].image.height/2;
+						var r = Math.sqrt((cx-curx)*(cx-curx)+(cy-cury)*(cy-cury));
+						//with shield
+						var range = Math.PI/4; //shield arc length/2
+						if(r < 120 && r > 50 && inRange(hazards[i].angle,range)){ //with shield
+							hazards.splice(i--,1);
+							sndDeflect.play();
+						} else if(r <= 50){ //with magneto
+							hazards.splice(i--,1);
+							if(!godmode && hp-damage >= 0) hp -= damage;
+							if(hp<=0){
+								gameState = gameOver(gameState);
+							}
+						}
+					}
+					//increment frame count and seconds
+					frameCounter++;
+					if(frameCounter%30 == 0) {
+						time++;
+						if(time%scaleRateSpawn == 0) gameState.spawn += spawnInc;	//increase spawn rate of hazards
+						if(time%scaleRateVel-scaleDelay == 0) gameState.vel += velocityInc;	//increase velocity of hazards
+					}
+					
+					//draw persistent images
+					ctx.clearRect(0,0,can.width,can.height);
+					ctx.drawImage(clouds,0,0,600,480);
+					ctx.drawImage(capeFlap,(capeFlap.width/3)*spriteIndex,0,capeFlap.width/3,capeFlap.height,cx-capeFlap.width/6,cy-capeFlap.height/2,capeFlap.width/3,capeFlap.height);
+					if(frameCounter%8 == 0){	//magneto animation
+						spriteIndex++;
+						if(spriteIndex == 3){
+							spriteIndex = 0;
+						}
+					}
+					currentA = drawShield(currentA,a);
+					//draw hazards
+					for(var i = 0; i < hazards.length; i++){
+						drawHazard(hazards[i]);
+					}
+					
+					//Draw lives/time
+					ctx.font = "29px Arial";
+					ctx.fillStyle = "white";
+					ctx.fillText("TIME: "+time.toString(),10,30);
+					ctx.fillText("HP",430,30);
+					ctx.beginPath();
+					ctx.lineWidth="3";
+					ctx.strokeStyle="white";
+					ctx.rect(cx-13,10,26,26); //power up frame
+					ctx.rect(480,10,106,21); 
+					ctx.stroke();
+					ctx.fillStyle = "red";
+					ctx.fillRect(483,13,hp,15);
+				}
+			}	//End of game loop
+			
+			//initialise game
+			init(gameState,spawnBasePeriod,hazardBaseVel);
+			
+			//Draws hazard with correct rotation
+			function drawHazard(hazard){
+				ctx.save();
+				ctx.translate(hazard.xpos+hazard.image.width/2,hazard.ypos+hazard.image.height/2);
+				ctx.rotate(-hazard.angle);
+				ctx.drawImage(hazard.image,-(hazard.image.width/2),-(hazard.image.height/2));
+				ctx.restore();
+			} 
+			
+			//Draws shield with correct rotation
+			function drawShield(currentA, a){
+				ctx.save();
+				ctx.translate(cx,cy);
+				var diff = Math.atan2(Math.sin(a-currentA),Math.cos(a-currentA));
+				if(diff < 0){
+					if(Math.abs(diff) < shieldVel) currentA = a;
+					else currentA -= shieldVel;
+				}
+				else if(diff > 0){ 
+					if(Math.abs(diff) < shieldVel) currentA = a;
+					else currentA += shieldVel;
+				}
+				ctx.rotate(currentA);
+				ctx.drawImage(shield,-(shield.width/2),-(shield.height/2));
+				ctx.restore();
+				return currentA;
+			} 
+			
+			//Routine for end of game
+			function gameOver(gameState){
+				gameState.state = "gameover";
+				console.log(gameState.state);
+				console.log("vel: "+gameState.vel);
+				console.log("spawn: "+gameState.spawn);
+				clearInterval(gameloop);
+				setTimeout(function(){
+					ctx.globalAlpha = 0.5;
+					ctx.fillStyle = "black";
+					ctx.fillRect(0,0,can.width,can.height);
+					ctx.globalAlpha = 1;
+					ctx.textAlign = "center";
+					ctx.font = "30pt calibri";
+					ctx.fillStyle = "red";
+					ctx.fillText("Game Over", can.width/2, can.height/2);
+					ctx.textAlign = "left";
+				},100);
+				var name = prompt("Enter Your Initials","---");
+				var score = new Score(name,time);
+				scores.push(score);
+				return gameState;
+			}
+	</script>
+
+</body>
+
+</html>
